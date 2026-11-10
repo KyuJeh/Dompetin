@@ -125,8 +125,8 @@ body{background:var(--bg);color:var(--tx)}
 
 <div class="mod" id="mod"><div class="sheet" id="sheet"></div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"></script>
 <script>
+window.onerror=function(m,u,l){var e=document.getElementById("toast");if(e){e.textContent="Error: "+m+" (baris "+l+")";e.className="on"}};
 var CATS=[["🍜","Makan"],["🛒","Belanja"],["🚗","Transport"],["🏠","Rumah"],["💡","Tagihan"],["🎮","Hiburan"],["💊","Kesehatan"],["📦","Lainnya"]];
 var S={gaji:0,tx:[],arch:{}};
 try{var r=localStorage.getItem("cd1");if(r)S=JSON.parse(r)}catch(e){}
@@ -252,4 +252,51 @@ function idb(){return new Promise(function(res,rej){if(DB)return res(DB);var q=i
 function iput(k,v){return idb().then(function(d){return new Promise(function(res,rej){var t=d.transaction("i","readwrite");t.objectStore("i").put(v,k);t.oncomplete=res;t.onerror=rej})})}
 function iget(k){return idb().then(function(d){return new Promise(function(res,rej){var q=d.transaction("i").objectStore("i").get(k);q.onsuccess=function(){res(q.result)};q.onerror=rej})})}
 function idel(k){idb().then(function(d){d.transaction("i","readwrite").objectStore("i").delete(k)}).catch(function(){})}
-  
+function shrink(f){return new Promise(function(res,rej){var u=URL.createObjectURL(f),im=new Image();im.onload=function(){var s=Math.min(1,1400/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext("2d").drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL("image/jpeg",.75))};im.onerror=rej;im.src=u})}
+function attach(img,cb){if(!img)return cb(null);var id="i"+Date.now();iput(id,img).then(function(){cb(id)}).catch(function(){cb(null)})}
+var TT;
+function toast(m,t){var e=$("toast");e.textContent=m;e.className="on";e.onclick=t?function(){e.className="";detail(t)}:null;clearTimeout(TT);TT=setTimeout(function(){e.className=""},5000)}
+function loadTess(){return new Promise(function(res,rej){if(window.Tesseract)return res();var x=document.createElement("script");x.src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js";x.onload=res;x.onerror=rej;document.head.appendChild(x)})}
+function proses(f,gal){
+  open('<h3>Membaca gambar…</h3><div class="st" id="st">Menyiapkan</div>');
+  shrink(f).then(function(img){
+    return loadTess().then(function(){
+      return Tesseract.recognize(img,"eng",{logger:function(m){if(m.status&&$("st"))$("st").textContent=m.status+(m.progress?" "+Math.round(m.progress*100)+"%":"")}}).then(function(r){
+        var p=parse(r.data.text);
+        if(gal&&p.total){attach(img,function(id){var t={t:"out",a:p.total,n:"QRIS",c:"Lainnya",d:Date.now(),img:id,q:true};S.tx.push(t);save();render();close();toast("Tersimpan "+rp(p.total)+" · ketuk untuk ubah",t)})}
+        else review(p,img);
+      });
+    }).catch(function(){review({items:[],total:0},img)});
+  }).catch(function(){close();toast("Gambar tidak bisa dibaca")});
+}
+function detail(t){
+  var cat=t.c;
+  var h='<h3>Detail catatan</h3><div class="lbl">Nama</div><input id="dn" placeholder="Nama / catatan"><div class="lbl" style="margin-top:8px">Jumlah</div><input id="da" inputmode="numeric" value="'+t.a.toLocaleString("id-ID")+'">';
+  if(t.t==="out")h+='<div class="cats">'+CATS.map(function(c){return '<button class="cat'+(c[1]===cat?" sel":"")+'" data-c="'+c[1]+'"><span>'+c[0]+'</span>'+c[1]+'</button>'}).join("")+'</div>';
+  h+='<div id="dph"></div><button class="btn" id="ds">Simpan perubahan</button><button class="btn g" id="dx">Tutup</button>';
+  open(h);$("dn").value=t.n||"";
+  if(t.img)iget(t.img).then(function(u){if(u&&$("dph"))$("dph").innerHTML='<div class="lbl">Foto (ketuk untuk perbesar)</div><img class="ph s" src="'+u+'" onclick="this.classList.toggle(\'s\')">'}).catch(function(){});
+  Array.prototype.forEach.call(document.querySelectorAll(".cat"),function(b){b.onclick=function(){cat=b.dataset.c;Array.prototype.forEach.call(document.querySelectorAll(".cat"),function(x){x.classList.toggle("sel",x===b)})}});
+  $("da").oninput=function(){var n=num(this.value);this.value=n?n.toLocaleString("id-ID"):""};
+  $("dn").onfocus=$("da").onfocus=function(){var e=this;setTimeout(function(){e.scrollIntoView({block:"center"})},300)};
+  $("dx").onclick=close;
+  $("ds").onclick=function(){t.a=num($("da").value)||t.a;t.n=$("dn").value.trim();if(t.t==="out")t.c=cat;save();render();close()};
+}
+/* ---- tombol back: konfirmasi keluar ---- */
+function askExit(){
+  open('<h3>Keluar dari aplikasi?</h3><div class="st">Datamu tersimpan aman di HP.</div><button class="btn" id="ex1">Keluar</button><button class="btn g" id="ex0">Batal</button>');
+  $("ex0").onclick=close;
+  $("ex1").onclick=function(){var A=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.App;if(A&&A.exitApp)A.exitApp();else window.close()};
+}
+try{var A=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.App;
+  if(A&&A.addListener)A.addListener("backButton",function(){if($("mod").className.indexOf("on")>-1)close();else askExit()});
+}catch(e){}
+
+function theme(t){document.documentElement.setAttribute("data-theme",t);$("bt").textContent=t==="dark"?"☀️":"🌙";try{localStorage.setItem("cdt",t)}catch(e){}}
+var T="dark";try{T=localStorage.getItem("cdt")||"dark"}catch(e){}
+theme(T);
+$("bt").onclick=function(){theme(document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark")};
+render();
+</script>
+</body>
+</html>
