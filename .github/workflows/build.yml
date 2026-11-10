@@ -9,6 +9,8 @@ jobs:
         with: {node-version: 20}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: 17}
+      - run: mkdir -p www; test -f www/index.html || cp index.html www/index.html
+      - run: ls -R www
       - run: npm init -y
       - run: npm i @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
       - run: npx cap init "Dompetin" com.gabs.dompetin --web-dir www
