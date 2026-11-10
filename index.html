@@ -102,14 +102,13 @@ body{background:var(--bg);color:var(--tx)}
 .ph{display:block;width:100%;max-height:48vh;object-fit:contain;background:var(--bg);border-radius:12px;margin-bottom:10px}
 .cam{color:var(--pri);border-width:1.5px}
 .cam svg{display:block}
+.ph.s{max-height:28vh}
 </style>
 </head>
 <body>
 <div class="top">
   <div class="lbl">Sisa uang</div>
   <div class="bal" id="bal">Rp 0</div>
-  <div class="lbl">Gaji bulan ini</div>
-  <input id="gaji" inputmode="numeric" placeholder="Masukkan gaji, mis. 5000000">
   <div class="sm"><span id="tin">Masuk: Rp 0</span><span id="tout">Keluar: Rp 0</span></div>
   <div class="tb"><button id="bg">📊 Grafik</button><button id="br">↺ Reset bulan ini</button><button id="bt" aria-label="Ganti tema">☀️</button></div>
 </div>
@@ -126,25 +125,26 @@ body{background:var(--bg);color:var(--tx)}
 
 <div class="mod" id="mod"><div class="sheet" id="sheet"></div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"></script>
 <script>
+window.onerror=function(m,u,l){var e=document.getElementById("toast");if(e){e.textContent="Error: "+m+" (baris "+l+")";e.className="on"}};
 var CATS=[["🍜","Makan"],["🛒","Belanja"],["🚗","Transport"],["🏠","Rumah"],["💡","Tagihan"],["🎮","Hiburan"],["💊","Kesehatan"],["📦","Lainnya"]];
 var S={gaji:0,tx:[],arch:{}};
 try{var r=localStorage.getItem("cd1");if(r)S=JSON.parse(r)}catch(e){}
 S.arch=S.arch||{};
+if(S.gaji>0){S.tx.push({t:"in",a:S.gaji,n:"Gaji",c:"",d:Date.now()});S.gaji=0;save()}
 function mk(ts){var d=new Date(ts);return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)}
 function save(){try{localStorage.setItem("cd1",JSON.stringify(S))}catch(e){}}
 function rp(n){return "Rp "+Math.round(n).toLocaleString("id-ID")}
 function $(i){return document.getElementById(i)}
 function num(s){return parseInt(String(s).replace(/\D/g,""))||0}
 function render(){
-  var i=S.gaji,o=0,now=mk(Date.now());
+  var i=0,o=0,now=mk(Date.now());
   var cur=S.tx.filter(function(t){return mk(t.d)===now});
   cur.forEach(function(t){if(t.t==="in")i+=t.a;else o+=t.a});
   var b=i-o;$("bal").textContent=rp(b);$("bal").className="bal"+(b<0?" neg":"");
   $("tin").textContent="Masuk: "+rp(i);$("tout").textContent="Keluar: "+rp(o);
   var L=$("list");L.innerHTML="";
-  if(!cur.length){L.innerHTML='<div class="empty">Belum ada catatan.<br>Tekan − untuk pengeluaran atau 📷 untuk scan struk.</div>';return}
+  if(!cur.length){L.innerHTML='<div class="empty">Belum ada catatan.<br>Tekan + untuk tambah gaji, − untuk pengeluaran.</div>';return}
   cur.slice().reverse().forEach(function(t){
     var c=CATS.filter(function(x){return x[1]===t.c})[0]||["💰","Pemasukan"];
     var d=document.createElement("div");d.className="it";
@@ -160,8 +160,6 @@ function render(){
 function open(h){$("sheet").innerHTML=h;$("mod").className="mod on"}
 function close(){$("mod").className="mod"}
 $("mod").onclick=function(e){if(e.target===$("mod"))close()};
-$("gaji").value=S.gaji?S.gaji.toLocaleString("id-ID"):"";
-$("gaji").oninput=function(){S.gaji=num(this.value);this.value=S.gaji?S.gaji.toLocaleString("id-ID"):"";save();render()};
 
 function form(type){
   var cat="Makan";
@@ -253,41 +251,4 @@ var DB;
 function idb(){return new Promise(function(res,rej){if(DB)return res(DB);var q=indexedDB.open("cdimg",1);q.onupgradeneeded=function(){q.result.createObjectStore("i")};q.onsuccess=function(){DB=q.result;res(DB)};q.onerror=rej})}
 function iput(k,v){return idb().then(function(d){return new Promise(function(res,rej){var t=d.transaction("i","readwrite");t.objectStore("i").put(v,k);t.oncomplete=res;t.onerror=rej})})}
 function iget(k){return idb().then(function(d){return new Promise(function(res,rej){var q=d.transaction("i").objectStore("i").get(k);q.onsuccess=function(){res(q.result)};q.onerror=rej})})}
-function idel(k){idb().then(function(d){d.transaction("i","readwrite").objectStore("i").delete(k)}).catch(function(){})}
-function shrink(f){return new Promise(function(res,rej){var u=URL.createObjectURL(f),im=new Image();im.onload=function(){var s=Math.min(1,1400/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext("2d").drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL("image/jpeg",.75))};im.onerror=rej;im.src=u})}
-function attach(img,cb){if(!img)return cb(null);var id="i"+Date.now();iput(id,img).then(function(){cb(id)}).catch(function(){cb(null)})}
-var TT;
-function toast(m,t){var e=$("toast");e.textContent=m;e.className="on";e.onclick=t?function(){e.className="";detail(t)}:null;clearTimeout(TT);TT=setTimeout(function(){e.className=""},5000)}
-function proses(f,gal){
-  open('<h3>Membaca gambar…</h3><div class="st" id="st">Menyiapkan</div>');
-  shrink(f).then(function(img){
-    if(!window.Tesseract){review({items:[],total:0},img);return}
-    return Tesseract.recognize(img,"eng",{logger:function(m){if(m.status&&$("st"))$("st").textContent=m.status+(m.progress?" "+Math.round(m.progress*100)+"%":"")}})
-    .then(function(r){
-      var p=parse(r.data.text);
-      if(gal&&p.total){attach(img,function(id){var t={t:"out",a:p.total,n:"QRIS",c:"Lainnya",d:Date.now(),img:id,q:true};S.tx.push(t);save();render();close();toast("Tersimpan "+rp(p.total)+" · ketuk untuk ubah",t)})}
-      else review(p,img);
-    })
-    .catch(function(){review({items:[],total:0},img)});
-  }).catch(function(){close();toast("Gambar tidak bisa dibaca")});
-}
-function detail(t){
-  var cat=t.c;
-  var h='<h3>Detail catatan</h3><div id="dph"></div><div class="lbl">Jumlah</div><input id="da" inputmode="numeric" value="'+t.a.toLocaleString("id-ID")+'"><input id="dn" placeholder="Catatan" style="margin-top:8px">';
-  if(t.t==="out")h+='<div class="cats">'+CATS.map(function(c){return '<button class="cat'+(c[1]===cat?" sel":"")+'" data-c="'+c[1]+'"><span>'+c[0]+'</span>'+c[1]+'</button>'}).join("")+'</div>';
-  h+='<button class="btn" id="ds">Simpan perubahan</button><button class="btn g" id="dx">Tutup</button>';
-  open(h);$("dn").value=t.n||"";
-  if(t.img)iget(t.img).then(function(u){if(u&&$("dph"))$("dph").innerHTML='<img class="ph" src="'+u+'">'}).catch(function(){});
-  Array.prototype.forEach.call(document.querySelectorAll(".cat"),function(b){b.onclick=function(){cat=b.dataset.c;Array.prototype.forEach.call(document.querySelectorAll(".cat"),function(x){x.classList.toggle("sel",x===b)})}});
-  $("da").oninput=function(){var n=num(this.value);this.value=n?n.toLocaleString("id-ID"):""};
-  $("dx").onclick=close;
-  $("ds").onclick=function(){t.a=num($("da").value)||t.a;t.n=$("dn").value.trim();if(t.t==="out")t.c=cat;save();render();close()};
-}
-function theme(t){document.documentElement.setAttribute("data-theme",t);$("bt").textContent=t==="dark"?"☀️":"🌙";try{localStorage.setItem("cdt",t)}catch(e){}}
-var T="dark";try{T=localStorage.getItem("cdt")||"dark"}catch(e){}
-theme(T);
-$("bt").onclick=function(){theme(document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark")};
-render();
-</script>
-</body>
-</html>
+function idel(k){idb().then(function(d){d.transaction("i","readwrite").objectStor
